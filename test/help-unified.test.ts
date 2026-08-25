@@ -31,7 +31,10 @@ describe("unified help templates", () => {
   it("fills to the same Usage line for every language when the command token is migrate-<verb>", async () => {
     for (const verb of MIGRATE_VERBS) {
       const raw = await readFile(join(HELP_ROOT, `${verb}.txt`), "utf8");
-      const filled = fill(raw, { command: migrateCommand(verb) });
+      const filled = fill(raw, {
+        command: migrateCommand(verb),
+        usage: usageLine(verb),
+      });
       expect(filled.split("\n")[0]).toBe(usageLine(verb));
       expect(await loadHelpText(verb)).toBe(filled.replace(/\n$/, ""));
     }
