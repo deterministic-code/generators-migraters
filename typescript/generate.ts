@@ -1,3 +1,4 @@
+import { createCasingStrategy } from "@deterministic-code/generators-common/casing-strategy";
 import { fill } from "@deterministic-code/generators-common/fill";
 import type { GenerateContext } from "@deterministic-code/generators-common/generate-context";
 import { content, patch, type GenerateEntry } from "@deterministic-code/generators-common/generate-entry";
@@ -168,7 +169,8 @@ export const generate = async (
     shared,
     containerSqlRoot: layout.containerSqlRoot(),
   };
-  const libImport = libraryImportSpecifier("app", libMode, "app.ts");
+  const appFile = `${createCasingStrategy("typescript", ctx.settings).convertFileName("app")}.ts`;
+  const libImport = libraryImportSpecifier("app", libMode, appFile);
   const [dbImportsRaw, beforeHook, apk, hook] = await Promise.all([
     fillPackTemplate("typescript/templates/app_ts_db_hook_imports.ts", {
       libImport,
@@ -235,8 +237,8 @@ export const generate = async (
       : [];
   return [
     ...bundled,
-    patch("app.ts", `${dbImportsRaw.trimEnd()}\n`, "APP_DB_IMPORTS"),
-    patch("app.ts", `${beforeHook.trimEnd()}\n`, "APP_BEFORE_HOOK"),
+    patch(appFile, `${dbImportsRaw.trimEnd()}\n`, "APP_DB_IMPORTS", "None"),
+    patch(appFile, `${beforeHook.trimEnd()}\n`, "APP_BEFORE_HOOK", "None"),
     hook,
     patch("package.json", JSON.stringify(packagePatch)),
     ...dbFilePatches(dialects),
