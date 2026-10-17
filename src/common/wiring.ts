@@ -69,18 +69,38 @@ export const dbFilePatches = (dialects: string[]): GenerateEntry[] => {
 const withNewline = (text: string): string =>
   text.endsWith("\n") ? text : `${text}\n`;
 
+const insertRunBefore = (
+  dockerfile: string,
+  needle: string,
+  runLine: string,
+): string => {
+  const run = withNewline(runLine);
+  if (dockerfile.includes(run.trim())) return dockerfile;
+  const idx = dockerfile.indexOf(needle);
+  if (idx === -1) return dockerfile;
+  return `${dockerfile.slice(0, idx)}${run}${dockerfile.slice(idx)}`;
+};
+
 export const dockerPatches = (
   spec: LanguageSpec,
   mode: MigrateMode,
   tokens: Record<string, unknown>,
-): GenerateEntry[] => [
-  patch("Dockerfile", withNewline(fill(spec.docker.copy[mode], tokens)), "MIGRATE_COPY"),
-  patch(
-    "Dockerfile",
-    withNewline(fill(spec.docker.runtime_copy[mode], tokens)),
-    "MIGRATE_RUNTIME_COPY",
-  ),
-];
+  extra?: { initRun?: string },
+): GenerateEntry[] => {
+  let copy = withNewline(fill(spec.docker.copy[mode], tokens));
+  if (mode === "bundled" && extra?.initRun !== undefined) {
+    copy = insertRunBefore(copy, "RUN cargo build", extra.initRun);
+    copy = insertRunBefore(copy, "RUN dotnet publish", extra.initRun);
+  }
+  return [
+    patch("Dockerfile", copy, "MIGRATE_COPY"),
+    patch(
+      "Dockerfile",
+      withNewline(fill(spec.docker.runtime_copy[mode], tokens)),
+      "MIGRATE_RUNTIME_COPY",
+    ),
+  ];
+};
 
 export const entrypointPatch = async (
   language: string,

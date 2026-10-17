@@ -88,45 +88,54 @@ describe("generate lanes emit the same CLI help", () => {
       overrides?: Record<string, string>;
     };
     expect(merge.scripts["migrate:setup"]).toContain(
-      "npm --prefix migraters/typescript exec -- migrate-setup --provider",
+      "migrate-setup --provider",
     );
-    expect(merge.scripts.migrate).toContain(
-      "npm --prefix migraters/typescript exec -- migrate-up --provider",
+    expect(merge.scripts.migrate).toContain("migrate-up --provider");
+    expect(merge.scripts["migrate:down"]).toContain("migrate-down --provider");
+    expect(merge.scripts["migrate:build"]).toBe(
+      "migrate-init --dialect sqlite --dialect postgres",
     );
-    expect(merge.scripts["migrate:down"]).toContain(
-      "npm --prefix migraters/typescript exec -- migrate-down --provider",
+    expect(merge.dependencies?.["@deterministic-code/migraters"]).toBe(
+      "github:deterministic-code/migraters#path:typescript",
     );
-    expect(merge.dependencies?.["@deterministic-code/migraters"]).toBeUndefined();
+    expect(merge.dependencies?.mysql2).toBeUndefined();
+    expect(merge.dependencies?.mssql).toBeUndefined();
+    expect(merge.dependencies?.oracledb).toBeUndefined();
     expect(merge.allowScripts?.["better-sqlite3"]).toBe(true);
     expect(merge.allowScripts?.["@deterministic-code/deterministic"]).toBe(true);
-    expect(merge.overrides?.["better-sqlite3"]).toBe("^13.0.3");
+    expect(merge.overrides?.["better-sqlite3"]).toBeUndefined();
     expect(merge.overrides?.glob).toBe("^13.0.6");
-    const bundledPkg = tsEntries.find(
-      (e) =>
-        e.kind === "content" && e.filename === "migraters/typescript/package.json",
-    );
-    if (!bundledPkg || bundledPkg.kind !== "content") {
-      throw new Error("bundled migraters/typescript/package.json missing");
-    }
-    expect(bundledPkg.contents).not.toContain("generate-help");
-    expect(bundledPkg.contents).not.toContain("generate:help");
-    const bundled = JSON.parse(bundledPkg.contents) as {
-      scripts: Record<string, string>;
-      dependencies: Record<string, string>;
-      allowScripts: Record<string, boolean>;
-      overrides: Record<string, string>;
-    };
-    expect(bundled.scripts.prepare).toBe("npm run build");
-    expect(bundled.dependencies["better-sqlite3"]).toBe("^13.0.3");
-    expect(bundled.allowScripts["better-sqlite3"]).toBe(true);
-    expect(bundled.allowScripts.esbuild).toBe(true);
-    expect(bundled.overrides["better-sqlite3"]).toBe("^13.0.3");
-    expect(bundled.overrides.glob).toBe("^13.0.6");
+    expect(
+      tsEntries.some(
+        (e) =>
+          e.kind === "content" &&
+          e.filename === "migraters/typescript/package.json",
+      ),
+    ).toBe(false);
     const rust = contentsByName(rustEntries);
     expect(hasSuffix(rust, "migrate_setup.rs")).toBe(true);
     expect(hasSuffix(rust, "migrate_up.rs")).toBe(true);
     expect(hasSuffix(rust, "migrate_down.rs")).toBe(true);
     expect(hasSuffix(rust, "migrate_create.rs")).toBe(true);
+    const cargoToml = rust.get("migraters/rust/Cargo.toml");
+    expect(cargoToml).toMatch(/^default = \["sqlite", "postgres"\]$/m);
+    expect(cargoToml).not.toMatch(/default = \[[^\]]*(oracle|sqlserver)/);
+    expect(hasSuffix(rust, "dialects/oracle.rs")).toBe(true);
+    const rustCopy = rustEntries.find(
+      (e) =>
+        e.kind === "patch" &&
+        e.filename === "Dockerfile" &&
+        e.section === "MIGRATE_COPY",
+    );
+    if (!rustCopy || rustCopy.kind !== "patch") {
+      throw new Error("rust MIGRATE_COPY patch missing");
+    }
+    expect(rustCopy.content).toContain(
+      "RUN cargo run --manifest-path migraters/rust/init/Cargo.toml -- --dialect sqlite --dialect postgres",
+    );
+    expect(rustCopy.content.indexOf("cargo run --manifest-path migraters/rust/init")).toBeLessThan(
+      rustCopy.content.indexOf("RUN cargo build --release --manifest-path migraters/rust/Cargo.toml"),
+    );
   });
 
   it("keeps entrypoint invocations on the unified binary names", async () => {

@@ -6,6 +6,7 @@ import { bundledEntries, loadManifest } from "../src/common/emit-bundle.ts";
 import { languageSpec, type LanguageSpec } from "../src/common/manifest.ts";
 import {
   libraryReferenceMode,
+  migrateInitFlags,
   migrateLayout,
   migrateMode,
   resolveDatasourceDialects,
@@ -82,13 +83,12 @@ const bundledPackageScripts = (
   return { ...rest, prepare: "npm run build" };
 };
 
-/** v13 ships prebuilds and drops deprecated prebuild-install. */
-const SQLITE_DRIVER = "^13.0.3";
 /** glob 10/11 are deprecated; 13 is the current maintained line. */
 const GLOB_OVERRIDE = "^13.0.6";
 
 const appInstallAllowScripts = (
   spec: LanguageSpec,
+  dialects: string[],
 ): Record<string, boolean> => {
   const allowScripts: Record<string, boolean> = {
     "@deterministic-code/deterministic": true,
@@ -96,8 +96,8 @@ const appInstallAllowScripts = (
     "core-js": true,
     esbuild: true,
   };
-  for (const dialect of Object.values(spec.dialects)) {
-    for (const pkg of dialect.packages ?? []) {
+  for (const dialect of dialects) {
+    for (const pkg of spec.dialects[dialect]?.packages ?? []) {
       if (pkg.installScripts) allowScripts[pkg.name] = true;
     }
   }
@@ -105,16 +105,16 @@ const appInstallAllowScripts = (
 };
 
 const installOverrides = (): Record<string, string> => ({
-  "better-sqlite3": SQLITE_DRIVER,
   glob: GLOB_OVERRIDE,
 });
 
 const bundledAllowScripts = (
   spec: LanguageSpec,
+  dialects: string[],
 ): Record<string, boolean> => {
   const allowScripts: Record<string, boolean> = { esbuild: true };
-  for (const dialect of Object.values(spec.dialects)) {
-    for (const pkg of dialect.packages ?? []) {
+  for (const dialect of dialects) {
+    for (const pkg of spec.dialects[dialect]?.packages ?? []) {
       if (pkg.installScripts) allowScripts[pkg.name] = true;
     }
   }
@@ -125,6 +125,7 @@ const emitBundledPackageJson = (
   entries: GenerateEntry[],
   packageRel: string,
   spec: LanguageSpec,
+  dialects: string[],
 ): GenerateEntry[] =>
   entries.map((entry) => {
     if (entry.kind !== "content" || entry.filename !== packageRel) return entry;
@@ -134,18 +135,17 @@ const emitBundledPackageJson = (
       allowScripts?: Record<string, boolean>;
       overrides?: Record<string, string>;
     };
-    const dependencies = { ...pkg.dependencies };
-    if (dependencies["better-sqlite3"] !== undefined) {
-      dependencies["better-sqlite3"] = SQLITE_DRIVER;
-    }
     return {
       ...entry,
       contents: `${JSON.stringify(
         {
           ...pkg,
-          dependencies,
+          dependencies: { ...pkg.dependencies },
           scripts: bundledPackageScripts(pkg.scripts ?? {}),
-          allowScripts: { ...pkg.allowScripts, ...bundledAllowScripts(spec) },
+          allowScripts: {
+            ...pkg.allowScripts,
+            ...bundledAllowScripts(spec, dialects),
+          },
           overrides: { ...pkg.overrides, ...installOverrides() },
         },
         null,
@@ -202,20 +202,21 @@ export const generate = async (
   const packagePatch: Record<string, unknown> = {
     scripts,
     config: { test_db: TEST_DB_RELATIVE_PATH },
-    allowScripts: appInstallAllowScripts(spec),
+    allowScripts: appInstallAllowScripts(spec, dialects),
     overrides: installOverrides(),
   };
   if (mode === "reference") {
     const dependencies: Record<string, string> = {};
-    if (spec.reference?.package && spec.reference.spec) {
-      dependencies[spec.reference.package] = spec.reference.spec;
-    }
-    for (const dialect of dialects) {
-      for (const pkg of spec.dialects[dialect]?.packages ?? []) {
-        dependencies[pkg.name] = pkg.version;
-      }
+    if (spec.reference?.package) {
+      // Registry package is unpublished; install the TypeScript tree from GitHub.
+      dependencies[spec.reference.package] =
+        "github:deterministic-code/migraters#path:typescript";
     }
     packagePatch.dependencies = dependencies;
+    packagePatch.scripts = {
+      ...scripts,
+      "migrate:build": `migrate-init ${migrateInitFlags(dialects)}`,
+    };
   } else if (spec.build.steps.length > 0) {
     packagePatch.scripts = {
       ...scripts,
@@ -224,15 +225,13 @@ export const generate = async (
         .join(" && "),
     };
   }
-  // Common `typescript/src/**/*.ts` includes every dialect driver; those
-  // modules load SQL templates at import time, so bundled mode must ship
-  // templates for the full dialect set even when the app only uses sqlite.
   const bundled =
     mode === "bundled"
       ? emitBundledPackageJson(
-          await bundledEntries("typescript", Object.keys(spec.dialects)),
+          await bundledEntries("typescript", dialects),
           `${spec.root}/${spec.build.cwd}/package.json`,
           spec,
+          dialects,
         )
       : [];
   return [
