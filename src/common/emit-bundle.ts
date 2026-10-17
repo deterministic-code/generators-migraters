@@ -11,7 +11,11 @@ import type { BundleManifest } from "./manifest.ts";
 import { languageSpec } from "./manifest.ts";
 import { PACK_ROOT } from "./pack-root.ts";
 
-const siblingMigraters = join(PACK_ROOT, "..", "migraters");
+const siblingMigratersDirs = [
+  join(PACK_ROOT, "..", "migraters"),
+  join(PACK_ROOT, "..", "..", "migraters"),
+  join(PACK_ROOT, "..", "..", "..", "migraters"),
+];
 
 const readable = async (path: string): Promise<boolean> => {
   try {
@@ -22,8 +26,20 @@ const readable = async (path: string): Promise<boolean> => {
   }
 };
 
+const siblingMigratersRoot = async (): Promise<string | undefined> => {
+  for (const dir of siblingMigratersDirs) {
+    if (await readable(join(dir, "bundle.yaml"))) return dir;
+  }
+  return undefined;
+};
+
 export const loadManifest = async (): Promise<BundleManifest> => {
-  for (const path of [BUNDLE_MANIFEST_PATH, join(siblingMigraters, "bundle.yaml")]) {
+  const sibling = await siblingMigratersRoot();
+  const paths = [
+    BUNDLE_MANIFEST_PATH,
+    ...(sibling === undefined ? [] : [join(sibling, "bundle.yaml")]),
+  ];
+  for (const path of paths) {
     if (await readable(path)) return readManifestFile(path);
   }
   throw new Error(
@@ -33,7 +49,8 @@ export const loadManifest = async (): Promise<BundleManifest> => {
 
 export const bundleSourceRoot = async (): Promise<string> => {
   if (await readable(join(BUNDLE_FILES_DIR, "cli.yaml"))) return BUNDLE_FILES_DIR;
-  if (await readable(join(siblingMigraters, "bundle.yaml"))) return siblingMigraters;
+  const sibling = await siblingMigratersRoot();
+  if (sibling !== undefined) return sibling;
   throw new Error(
     "migrate bundle files not found — run `npm run fetch-bundle -- --from <migraters>`",
   );

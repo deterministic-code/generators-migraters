@@ -47,6 +47,29 @@ export const resolveDatasourceDialects = (
   return datasources.length > 0 ? datasources : ["sqlite"];
 };
 
+export const migrateInitFlags = (dialects: string[]): string =>
+  dialects.map((dialect) => `--dialect ${dialect}`).join(" ");
+
+export const setCargoDefaultFeatures = (
+  cargoToml: string,
+  dialects: string[],
+): string => {
+  const features = dialects.map((dialect) => `"${dialect}"`).join(", ");
+  const replacement = `default = [${features}]`;
+  const lines = cargoToml.split("\n");
+  let replaced = false;
+  const out = lines.map((line) => {
+    if (replaced || !line.trimStart().startsWith("default = [")) return line;
+    replaced = true;
+    const indent = line.slice(0, line.length - line.trimStart().length);
+    return `${indent}${replacement}`;
+  });
+  if (!replaced) {
+    throw new Error("Cargo.toml is missing a features default = [...] line");
+  }
+  return out.join("\n");
+};
+
 export const libraryReferenceMode = (
   settings: GenerateContext["settings"],
   language: string,
@@ -67,7 +90,7 @@ export const migrateMode = (
   const raw =
     settingsStr(settings, `languages.${language}.migrate_mode`) ??
     settingsStr(settings, "migrate_mode") ??
-    "bundled";
+    (language === "typescript" ? "reference" : "bundled");
   const normalized = raw.trim().toLowerCase();
   if (normalized === "bundled") return "bundled";
   if (normalized === "reference") return "reference";

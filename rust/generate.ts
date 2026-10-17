@@ -3,9 +3,11 @@ import { content, type GenerateEntry } from "@deterministic-code/generators-comm
 import { bundledEntries, loadManifest } from "../src/common/emit-bundle.ts";
 import { languageSpec } from "../src/common/manifest.ts";
 import {
+  migrateInitFlags,
   migrateLayout,
   migrateMode,
   resolveDatasourceDialects,
+  setCargoDefaultFeatures,
 } from "../src/common/layout.ts";
 import { settingsList } from "../src/common/settings.ts";
 import {
@@ -44,16 +46,35 @@ export const generate = async (
       layout.containerMigrationsDir("sqlite"),
     ),
   ]);
-  const bundled = mode === "bundled" ? await bundledEntries("rust", dialects) : [];
+  const bundled =
+    mode === "bundled"
+      ? (await bundledEntries("rust", dialects)).map((entry) => {
+          if (entry.kind !== "content") return entry;
+          if (entry.filename !== "migraters/rust/Cargo.toml") return entry;
+          return {
+            ...entry,
+            contents: setCargoDefaultFeatures(entry.contents, dialects),
+          };
+        })
+      : [];
+  const initRun =
+    mode === "bundled"
+      ? `RUN cargo run --manifest-path migraters/rust/init/Cargo.toml -- ${migrateInitFlags(dialects)}`
+      : undefined;
   return [
     ...bundled,
     hook,
     ...dbFilePatches(dialects),
-    ...dockerPatches(spec, mode, {
-      lane,
-      shared,
-      containerSqlRoot: layout.containerSqlRoot(),
-    }),
+    ...dockerPatches(
+      spec,
+      mode,
+      {
+        lane,
+        shared,
+        containerSqlRoot: layout.containerSqlRoot(),
+      },
+      initRun === undefined ? undefined : { initRun },
+    ),
     apk,
     ...gitkeeps(ctx.settings, dialects),
   ];
