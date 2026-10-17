@@ -95,6 +95,7 @@ const appInstallAllowScripts = (
     "@scarf/scarf": true,
     "core-js": true,
     esbuild: true,
+    "github:deterministic-code/migraters": true,
   };
   for (const dialect of dialects) {
     for (const pkg of spec.dialects[dialect]?.packages ?? []) {
@@ -208,9 +209,8 @@ export const generate = async (
   if (mode === "reference") {
     const dependencies: Record<string, string> = {};
     if (spec.reference?.package) {
-      // Registry package is unpublished; install the TypeScript tree from GitHub.
       dependencies[spec.reference.package] =
-        "github:deterministic-code/migraters#path:typescript";
+        spec.reference.spec ?? "github:deterministic-code/migraters";
     }
     packagePatch.dependencies = dependencies;
     packagePatch.scripts = {
