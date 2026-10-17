@@ -96,13 +96,16 @@ describe("generate lanes emit the same CLI help", () => {
       "migrate-init --dialect sqlite --dialect postgres",
     );
     expect(merge.dependencies?.["@deterministic-code/migraters"]).toBe(
-      "github:deterministic-code/migraters#path:typescript",
+      "github:deterministic-code/migraters",
     );
     expect(merge.dependencies?.mysql2).toBeUndefined();
     expect(merge.dependencies?.mssql).toBeUndefined();
     expect(merge.dependencies?.oracledb).toBeUndefined();
     expect(merge.allowScripts?.["better-sqlite3"]).toBe(true);
     expect(merge.allowScripts?.["@deterministic-code/deterministic"]).toBe(true);
+    expect(merge.allowScripts?.["github:deterministic-code/migraters"]).toBe(
+      true,
+    );
     expect(merge.overrides?.["better-sqlite3"]).toBeUndefined();
     expect(merge.overrides?.glob).toBe("^13.0.6");
     expect(
